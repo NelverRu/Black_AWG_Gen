@@ -6,12 +6,8 @@
   
   <img src="https://github.com/user-attachments/assets/3443d780-70e0-4551-b9cc-369758ba4356" alt="Line" width="350">  
   
-  <br>  
-
-  ### ⚠️ **Клиент должен поддерживать протокол AmneziaWG 1.5 или выше** ⚠️
-
-  <br>
-  
+  <br>    
+ 
   ![Line](https://github.com/user-attachments/assets/11f2cf05-34d7-4e45-82d7-93513a06c095)  
   ## 🔽 **Ссылка на генератор конфигураций** 🔽
 
