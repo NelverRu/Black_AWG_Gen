@@ -106,7 +106,7 @@
         .file-label {
             display: block;
             margin-bottom: 10px;
-            color: #6ad500;
+            color: #FF0000;
             font-weight: bold;
             font-size: 1.1rem;
         }
@@ -366,9 +366,8 @@ Endpoint = {{Endpoint}}</textarea>
         </div>
 
         <div class="action-buttons">
-            <button class="action-btn" id="generateBtn">🎲 Сгенерировать</button>
-            <button class="action-btn" id="copyResultBtn">📋 Копировать</button>
-            <a href="#" id="downloadLink" class="download-link" style="display: none;">⬇️ Скачать</a>
+           <button class="action-btn" id="generateBtn">🎲 Сгенерировать</button>
+           <a href="#" id="downloadLink" class="download-link" style="display: none;">⬇️ Скачать</a>
         </div>
 
         <div class="result-section">
@@ -1386,7 +1385,6 @@ Endpoint = {{Endpoint}}</textarea>
 		// ========== СБОР ВСЕХ ПАКЕТОВ ПО ТИПАМ ==========
         const allPackets = { I1: [], I2: [], I3: [], I4: [], I5: [] };
 
-        // Сортируем встроенные пакеты по типам
         for (const [key, value] of Object.entries(STATIC_VALUES)) {
         if (key.startsWith('I1_')) allPackets.I1.push(value);
         else if (key.startsWith('I2_')) allPackets.I2.push(value);
@@ -1395,7 +1393,6 @@ Endpoint = {{Endpoint}}</textarea>
         else if (key.startsWith('I5_')) allPackets.I5.push(value);
         }
 
-        // Функция получения случайного пакета для указанного типа
         function getRandomPacket(type) {
         const packets = allPackets[type];
         if (!packets || packets.length === 0) return '';
@@ -1407,7 +1404,6 @@ Endpoint = {{Endpoint}}</textarea>
         let currentServerName = 'WARP';
 
         const generateBtn = document.getElementById('generateBtn');
-        const copyResultBtn = document.getElementById('copyResultBtn');
         const downloadLink = document.getElementById('downloadLink');
         const configTemplate = document.getElementById('configTemplate');
         const resultConfig = document.getElementById('resultConfig');
@@ -1518,7 +1514,6 @@ Endpoint = {{Endpoint}}</textarea>
                     downloadLink.download = getFileName(currentServerName);
                     downloadLink.style.display = 'inline-flex';
                     
-                    generateBtn.innerHTML = '✅ Готово!';
                     setTimeout(() => {
                         generateBtn.innerHTML = originalText;
                     }, 2000);
@@ -1536,22 +1531,6 @@ Endpoint = {{Endpoint}}</textarea>
                 generateBtn.disabled = false;
             }
         }
-
-        copyResultBtn.addEventListener('click', function() {
-            if (resultConfig.value) {
-                navigator.clipboard.writeText(resultConfig.value).then(() => {
-                    const originalText = copyResultBtn.textContent;
-                    copyResultBtn.textContent = '✅ Скопировано!';
-                    setTimeout(() => {
-                        copyResultBtn.textContent = originalText;
-                    }, 2000);
-                }).catch(() => {
-                    showError('Не удалось скопировать');
-                });
-            } else {
-                showError('Сначала сгенерируйте конфиг');
-            }
-        });
 
         generateBtn.addEventListener('click', generateConfig);
 
