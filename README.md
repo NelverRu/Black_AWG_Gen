@@ -4,12 +4,11 @@
   
   <br>
   
-  <img width="500" height="133" alt="warp" src="https://github.com/user-attachments/assets/ed500eec-40ea-4e24-8ddd-d6489a60c714" />
+  <img width="280" height="70" alt="warp" src="https://github.com/user-attachments/assets/ed500eec-40ea-4e24-8ddd-d6489a60c714" />
 
   
   <br>    
  
-  ![Line](https://github.com/user-attachments/assets/11f2cf05-34d7-4e45-82d7-93513a06c095)  
   ## 🔽 **Ссылка на генератор конфигураций** 🔽
 
   <br>
@@ -19,8 +18,7 @@
   </a>
 
   <br>
-
-  ![Line](https://github.com/user-attachments/assets/11f2cf05-34d7-4e45-82d7-93513a06c095)  
+ 
   ### 🔽 **Скачать AmneziaWG для ПК и телефона можно в репозитории** 🔽
 
   <br>
