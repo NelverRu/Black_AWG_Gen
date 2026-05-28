@@ -400,7 +400,8 @@ class DynamicPacketGenerator {
         
         this.userAgents = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
         ];
     }
     
@@ -426,17 +427,35 @@ class DynamicPacketGenerator {
         return `${this.randInt(10, 240)}.${this.randInt(1, 255)}.${this.randInt(1, 255)}.${this.randInt(1, 255)}`;
     }
     
+    randPort() {
+        return this.randInt(1024, 65535);
+    }
+    
     // I1: SIP REGISTER
     makeSipRegister() {
         const ip = this.randIp();
-        const srcPort = this.randInt(1024, 65535);
+        const srcPort = this.randPort();
         const branch = this.randHex(26);
         const callId = this.randHex(16);
         const fromTag = this.randHex(8);
         const domain = this.domains[Math.floor(Math.random() * this.domains.length)];
         const expires = this.randInt(3600, 7200);
+        const cseq = this.randInt(1, 10);
         
-        const body = `REGISTER sip:${domain} SIP/2.0\r\nVia: SIP/2.0/UDP ${ip}:${srcPort};branch=z9hG4bK${branch}\r\nMax-Forwards: 70\r\nTo: <sip:user@${domain}>\r\nFrom: <sip:user@${domain}>;tag=${fromTag}\r\nCall-ID: ${callId}\r\nCSeq: 1 REGISTER\r\nContact: <sip:user@${ip}:${srcPort}>\r\nUser-Agent: Bria 5.0.0\r\nExpires: ${expires}\r\nContent-Length: 0\r\n\r\n`;
+        const sipUAs = ["Bria 5.0.0", "Zoiper 5.0.0", "MicroSIP/3.0.0", "Linphone/5.0.0"];
+        const ua = sipUAs[Math.floor(Math.random() * sipUAs.length)];
+        
+        const body = `REGISTER sip:${domain} SIP/2.0\r\n` +
+                    `Via: SIP/2.0/UDP ${ip}:${srcPort};branch=z9hG4bK${branch}\r\n` +
+                    `Max-Forwards: 70\r\n` +
+                    `To: <sip:user@${domain}>\r\n` +
+                    `From: <sip:user@${domain}>;tag=${fromTag}\r\n` +
+                    `Call-ID: ${callId}\r\n` +
+                    `CSeq: ${cseq} REGISTER\r\n` +
+                    `Contact: <sip:user@${ip}:${srcPort}>\r\n` +
+                    `User-Agent: ${ua}\r\n` +
+                    `Expires: ${expires}\r\n` +
+                    `Content-Length: 0\r\n\r\n`;
         
         const bytes = new TextEncoder().encode(body);
         return `<b 0x${this.toHex(bytes)}>`;
@@ -445,39 +464,108 @@ class DynamicPacketGenerator {
     // I2: TLS ClientHello
     makeTlsClientHello() {
         const sni = this.domains[Math.floor(Math.random() * this.domains.length)];
+        const sniBytes = new TextEncoder().encode(sni);
         const clientRandom = this.randBytes(32);
         
-        const record = [
-            0x16, 0x03, 0x03, 0x00, 0x5a,
-            0x01, 0x00, 0x00, 0x56, 0x03, 0x03,
+        // Формируем SNI extension
+        const sniExt = [
+            0x00, 0x00,  // server_name
+            (sniBytes.length + 5) >> 8, (sniBytes.length + 5) & 0xFF,
+            (sniBytes.length + 3) >> 8, (sniBytes.length + 3) & 0xFF,
+            0x00,  // host_name
+            sniBytes.length >> 8, sniBytes.length & 0xFF,
+            ...sniBytes
+        ];
+        
+        // supported_groups extension
+        const sgExt = [0x00, 0x0A, 0x00, 0x0A, 0x00, 0x08, 0x7B, 0x88, 0x65, 0x2C, 0xE4, 0x6B, 0x47, 0xAB];
+        
+        // ec_point_formats extension
+        const epExt = [0x00, 0x0B, 0x00, 0x04, 0x03, 0x00, 0x01, 0x02];
+        
+        const extensions = [...sniExt, ...sgExt, ...epExt];
+        const extLen = extensions.length;
+        
+        // Handshake body
+        const helloBody = [
             ...clientRandom,
-            0x00, 0x00, 0x02, 0xc0, 0x2b, 0x01, 0x00, 0x00, 0x2b,
-            0x00, 0x00, 0x00, 0x14, 0x00, 0x12, 0x00, 0x0f,
-            ...new TextEncoder().encode(sni),
-            0x00, 0x0b, 0x00, 0x04, 0x03, 0x00, 0x01, 0x02,
-            0x00, 0x0a, 0x00, 0x0a, 0x00, 0x08, 0x7b, 0x88, 0x65, 0x2c, 0xe4, 0x6b, 0x47, 0xab
+            0x00,  // session id length
+            0x00, 0x04,  // cipher suites length (2 ciphers)
+            0xC0, 0x2B,  // TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+            0xC0, 0x2C,  // TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+            0x01, 0x00,  // compression methods
+            extLen >> 8, extLen & 0xFF,
+            ...extensions
+        ];
+        
+        const helloLen = helloBody.length;
+        
+        // Handshake header
+        const handshake = [
+            0x01,  // ClientHello
+            0x00, 0x00, helloLen & 0xFF,
+            0x03, 0x03,  // TLS 1.2
+            ...helloBody
+        ];
+        
+        const hsLen = handshake.length;
+        
+        // TLS Record
+        const record = [
+            0x16, 0x03, 0x03,  // record type, TLS 1.2
+            hsLen >> 8, hsLen & 0xFF,
+            ...handshake
         ];
         
         return `<b 0x${this.toHex(new Uint8Array(record))}>`;
     }
     
-    // I3: TLS ServerHello (упрощенно)
+    // I3: TLS ServerHello
     makeTlsServerHello() {
         const serverRandom = this.randBytes(32);
-        const packet = new Uint8Array([
-            0x16, 0x03, 0x03, 0x00, 0x2a,
-            0x02, 0x00, 0x00, 0x26, 0x03, 0x03,
+        const ciphers = [0xC02F, 0xC030, 0xCCA8, 0x009C, 0x009D, 0xC013, 0xC014];
+        const cipher = ciphers[Math.floor(Math.random() * ciphers.length)];
+        
+        const helloBody = [
+            0x03, 0x03,  // TLS 1.2
+            ...serverRandom,
+            0x00,  // session id length
+            cipher >> 8, cipher & 0xFF,  // cipher suite
+            0x00,  // compression: null
+            0x00, 0x00  // no extensions
+        ];
+        
+        const handshake = [
+            0x02,  // ServerHello
+            0x00, 0x00, helloBody.length,
+            0x03, 0x03,
             ...serverRandom.slice(0, 28),
-            0x00, 0xc0, 0x2b, 0x00
-        ]);
-        return `<b 0x${this.toHex(packet)}>`;
+            0x00,
+            cipher >> 8, cipher & 0xFF,
+            0x00
+        ];
+        
+        const record = [
+            0x16, 0x03, 0x03,
+            handshake.length >> 8, handshake.length & 0xFF,
+            ...handshake
+        ];
+        
+        return `<b 0x${this.toHex(new Uint8Array(record))}>`;
     }
     
     // I4: TLS AppData
     makeTlsAppData() {
-        const randomData = this.randBytes(64);
-        const packet = new Uint8Array([0x17, 0x03, 0x03, 0x00, 0x40, ...randomData]);
-        return `<b 0x${this.toHex(packet)}>`;
+        const dhPart = this.randBytes(128);
+        const finishedData = this.randBytes(52);
+        
+        const keyExchangeBody = [0x10, 0x00, 0x00, 0x80, ...dhPart];
+        const keyExchangeRecord = [0x16, 0x03, 0x03, 0x00, keyExchangeBody.length, ...keyExchangeBody];
+        const ccsRecord = [0x14, 0x03, 0x03, 0x00, 0x01, 0x01];
+        const finishedRecord = [0x16, 0x03, 0x03, 0x00, finishedData.length, ...finishedData];
+        
+        const full = [...keyExchangeRecord, ...ccsRecord, ...finishedRecord];
+        return `<b 0x${this.toHex(new Uint8Array(full))}>`;
     }
     
     // I5: HTTP GET
@@ -486,7 +574,14 @@ class DynamicPacketGenerator {
         const path = this.paths[Math.floor(Math.random() * this.paths.length)];
         const ua = this.userAgents[Math.floor(Math.random() * this.userAgents.length)];
         
-        const body = `GET ${path} HTTP/1.1\r\nHost: ${host}\r\nUser-Agent: ${ua}\r\nAccept: text/html\r\nConnection: keep-alive\r\n\r\n`;
+        const body = `GET ${path} HTTP/1.1\r\n` +
+                    `Host: ${host}\r\n` +
+                    `User-Agent: ${ua}\r\n` +
+                    `Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\r\n` +
+                    `Accept-Language: en-US,en;q=0.5\r\n` +
+                    `Accept-Encoding: gzip, deflate, br\r\n` +
+                    `Connection: keep-alive\r\n\r\n`;
+        
         const bytes = new TextEncoder().encode(body);
         return `<b 0x${this.toHex(bytes)}>`;
     }
@@ -505,183 +600,164 @@ class DynamicPacketGenerator {
 // Инициализируем генератор
 const packetGen = new DynamicPacketGenerator();
 
-// Функция для получения случайного пакета (заменяет статический массив)
-function getRandomPacket(type) {
-    const packets = packetGen.generateAll();
-    switch(type) {
-        case 'I1': return packets.i1;
-        case 'I2': return packets.i2;
-        case 'I3': return packets.i3;
-        case 'I4': return packets.i4;
-        case 'I5': return packets.i5;
-        default: return '';
-    }
+// Функция для получения пакетов
+function getDynamicPackets() {
+    return packetGen.generateAll();
 }
-		// ========== СБОР ВСЕХ ПАКЕТОВ ПО ТИПАМ ==========
-        const allPackets = { I1: [], I2: [], I3: [], I4: [], I5: [] };
 
-        for (const [key, value] of Object.entries(STATIC_VALUES)) {
-        if (key.startsWith('I1_')) allPackets.I1.push(value);
-        else if (key.startsWith('I2_')) allPackets.I2.push(value);
-        else if (key.startsWith('I3_')) allPackets.I3.push(value);
-        else if (key.startsWith('I4_')) allPackets.I4.push(value);
-        else if (key.startsWith('I5_')) allPackets.I5.push(value);
-        }
+// ========== ОСНОВНАЯ ЛОГИКА ПРИЛОЖЕНИЯ ==========
 
-        function getRandomPacket(type) {
-        const packets = allPackets[type];
-        if (!packets || packets.length === 0) return '';
-        return packets[Math.floor(Math.random() * packets.length)];
-        }
-		
-        let currentEndpoint = 'engage.cloudflareclient.com:2408';
-        let currentType = 'standard';
-        let currentServerName = 'WARP';
+let currentEndpoint = 'engage.cloudflareclient.com:2408';
+let currentType = 'standard';
+let currentServerName = 'WARP';
 
-        const generateBtn = document.getElementById('generateBtn');
-        const downloadLink = document.getElementById('downloadLink');
-        const configTemplate = document.getElementById('configTemplate');
-        const resultConfig = document.getElementById('resultConfig');
-        const countryButtons = document.querySelectorAll('.country-btn');
+const generateBtn = document.getElementById('generateBtn');
+const downloadLink = document.getElementById('downloadLink');
+const configTemplate = document.getElementById('configTemplate');
+const resultConfig = document.getElementById('resultConfig');
+const countryButtons = document.querySelectorAll('.country-btn');
 
-        function showError(message) {
-            const toast = document.createElement('div');
-            toast.className = 'error-toast';
-            toast.textContent = `❌ ${message}`;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 4000);
-        }
-        
-		function getMoscowTimeString() {
-            const now = new Date();
-            const moscowTime = new Date(now.getTime() + (3 * 60 * 60 * 1000));
-            const hours = String(moscowTime.getUTCHours()).padStart(2, '0');
-            const minutes = String(moscowTime.getUTCMinutes()).padStart(2, '0');
-            return `${hours}_${minutes}`;
-        }
+function showError(message) {
+    const toast = document.createElement('div');
+    toast.className = 'error-toast';
+    toast.textContent = `❌ ${message}`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+}
 
-        function getFileName(serverName) {
-        const timeStr = getMoscowTimeString();
-        let countryCode = serverName;
-        if (serverName === 'WARP') {
+function getMoscowTimeString() {
+    const now = new Date();
+    const moscowTime = new Date(now.getTime() + (3 * 60 * 60 * 1000));
+    const hours = String(moscowTime.getUTCHours()).padStart(2, '0');
+    const minutes = String(moscowTime.getUTCMinutes()).padStart(2, '0');
+    return `${hours}_${minutes}`;
+}
+
+function getFileName(serverName) {
+    const timeStr = getMoscowTimeString();
+    let countryCode = serverName;
+    if (serverName === 'WARP') {
         countryCode = 'RU';
-       }
-       return `AWG_${countryCode}_${timeStr}.conf`;
-     }
+    }
+    return `AWG_${countryCode}_${timeStr}.conf`;
+}
 
-       function fillTemplateWithStaticValues(configContent, endpoint) {
-       let privateKey = '', publicKey = '', address = '';
-       const lines = configContent.split('\n');
+function fillTemplateWithConfig(configContent, endpoint) {
+    let privateKey = '', publicKey = '', address = '';
+    const lines = configContent.split('\n');
 
-       for (const line of lines) {
-           if (line.startsWith('PrivateKey = ')) {
-               privateKey = line.substring('PrivateKey = '.length).trim();
-           } else if (line.startsWith('PublicKey = ')) {
+    for (const line of lines) {
+        if (line.startsWith('PrivateKey = ')) {
+            privateKey = line.substring('PrivateKey = '.length).trim();
+        } else if (line.startsWith('PublicKey = ')) {
             publicKey = line.substring('PublicKey = '.length).trim();
-           } else if (line.startsWith('Address = ')) {
+        } else if (line.startsWith('Address = ')) {
             address = line.substring('Address = '.length).trim();
-           }
-      }
-
-            let template = configTemplate.value;
-            template = template.replace('{{PrivateKey}}', privateKey);
-            template = template.replace('{{Address}}', address);
-            template = template.replace('{{PublicKey}}', publicKey);
-            template = template.replace('{{Endpoint}}', endpoint);
-    
-           // 🔥 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: используем динамическую генерацию вместо статических пакетов
-            const packets = packetGen.generateAll();
-            template = template.replace('{{I1}}', packets.i1);
-            template = template.replace('{{I2}}', packets.i2);
-            template = template.replace('{{I3}}', packets.i3);
-            template = template.replace('{{I4}}', packets.i4);
-            template = template.replace('{{I5}}', packets.i5);
-    
-            return template;
-       }
-
-        function updateTemplateEndpoint(endpoint) {
-            const lines = configTemplate.value.split('\n');
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].startsWith('Endpoint =')) {
-                    lines[i] = `Endpoint = ${endpoint}`;
-                    break;
-                }
-            }
-            configTemplate.value = lines.join('\n');
         }
+    }
 
-        countryButtons.forEach(btn => {
-            btn.addEventListener('click', function() {
-                countryButtons.forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-                
-                currentType = this.dataset.type;
-                currentEndpoint = this.dataset.endpoint;
-                currentServerName = this.dataset.serverName;
-                
-                updateTemplateEndpoint(currentEndpoint);
-            });
+    let template = configTemplate.value;
+    template = template.replace('{{PrivateKey}}', privateKey);
+    template = template.replace('{{Address}}', address);
+    template = template.replace('{{PublicKey}}', publicKey);
+    template = template.replace('{{Endpoint}}', endpoint);
+    
+    // Используем динамическую генерацию пакетов
+    const packets = getDynamicPackets();
+    template = template.replace('{{I1}}', packets.i1);
+    template = template.replace('{{I2}}', packets.i2);
+    template = template.replace('{{I3}}', packets.i3);
+    template = template.replace('{{I4}}', packets.i4);
+    template = template.replace('{{I5}}', packets.i5);
+    
+    return template;
+}
+
+function updateTemplateEndpoint(endpoint) {
+    const lines = configTemplate.value.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith('Endpoint =')) {
+            lines[i] = `Endpoint = ${endpoint}`;
+            break;
+        }
+    }
+    configTemplate.value = lines.join('\n');
+}
+
+countryButtons.forEach(btn => {
+    btn.addEventListener('click', function() {
+        countryButtons.forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        
+        currentType = this.dataset.type;
+        currentEndpoint = this.dataset.endpoint;
+        currentServerName = this.dataset.serverName;
+        
+        updateTemplateEndpoint(currentEndpoint);
+    });
+});
+
+async function generateConfig() {
+    generateBtn.disabled = true;
+    const originalText = generateBtn.innerHTML;
+    generateBtn.innerHTML = '<span class="loading-spinner"></span> Генерация...';
+    
+    try {
+        const response = await fetch('/api/warp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: currentType })
         });
 
-        async function generateConfig() {
-            generateBtn.disabled = true;
-            const originalText = generateBtn.innerHTML;
-            generateBtn.innerHTML = '<span class="loading-spinner"></span> Генерация...';
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (data.success && data.content) {
+            const configContent = atob(data.content);
+            const finalConfig = fillTemplateWithConfig(configContent, currentEndpoint);
             
-            try {
-                const response = await fetch('/api/warp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: currentType })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const data = await response.json();
-
-                if (data.success && data.content) {
-                    const configContent = atob(data.content);
-                    const finalConfig = fillTemplateWithStaticValues(configContent, currentEndpoint);
-                    
-                    resultConfig.value = finalConfig;
-                    
-                    const blob = new Blob([finalConfig], { type: 'application/octet-stream' });
-                    const url = URL.createObjectURL(blob);
-                    downloadLink.href = url;
-                    downloadLink.download = getFileName(currentServerName);
-                    downloadLink.style.display = 'inline-flex';
-                    
-                    setTimeout(() => {
-                        generateBtn.innerHTML = originalText;
-                    }, 200);
-                } else {
-                    throw new Error(data.message || 'Ошибка генерации конфигурации');
-                }
-            } catch (error) {
-                console.error('Generation error:', error);
-                showError(error.message || 'Ошибка при генерации. Проверьте соединение с сервером.');
-                generateBtn.innerHTML = '❌ Ошибка';
-                setTimeout(() => {
-                    generateBtn.innerHTML = originalText;
-                }, 2500);
-            } finally {
-                generateBtn.disabled = false;
-            }
+            resultConfig.value = finalConfig;
+            
+            const blob = new Blob([finalConfig], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            downloadLink.href = url;
+            downloadLink.download = getFileName(currentServerName);
+            downloadLink.style.display = 'inline-flex';
+            
+            setTimeout(() => {
+                generateBtn.innerHTML = originalText;
+            }, 200);
+        } else {
+            throw new Error(data.message || 'Ошибка генерации конфигурации');
         }
+    } catch (error) {
+        console.error('Generation error:', error);
+        showError(error.message || 'Ошибка при генерации. Проверьте соединение с сервером.');
+        generateBtn.innerHTML = '❌ Ошибка';
+        setTimeout(() => {
+            generateBtn.innerHTML = originalText;
+        }, 2500);
+    } finally {
+        generateBtn.disabled = false;
+    }
+}
 
-        generateBtn.addEventListener('click', generateConfig);
+generateBtn.addEventListener('click', generateConfig);
 
-        const defaultBtn = document.querySelector('.country-btn[data-type="standard"]');
-        if (defaultBtn) {
-            defaultBtn.classList.add('active');
-            currentType = defaultBtn.dataset.type;
-            currentEndpoint = defaultBtn.dataset.endpoint;
-            currentServerName = defaultBtn.dataset.serverName;
-            updateTemplateEndpoint(currentEndpoint);
-        }
+const defaultBtn = document.querySelector('.country-btn[data-type="standard"]');
+if (defaultBtn) {
+    defaultBtn.classList.add('active');
+    currentType = defaultBtn.dataset.type;
+    currentEndpoint = defaultBtn.dataset.endpoint;
+    currentServerName = defaultBtn.dataset.serverName;
+    updateTemplateEndpoint(currentEndpoint);
+}
+
+// Для отладки - проверим, что генератор работает
+console.log('DynamicPacketGenerator loaded, test packet:', packetGen.makeSipRegister().substring(0, 100));
     </script>
 </body>
 </html>
